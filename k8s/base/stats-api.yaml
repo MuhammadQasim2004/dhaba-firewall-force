@@ -32,11 +32,11 @@ spec:
                   key: REDIS_HOST
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 20m
+              memory: 32Mi
             limits:
               cpu: 200m
-              memory: 128Mi
+              memory: 96Mi
           livenessProbe:
             httpGet:
               path: /health

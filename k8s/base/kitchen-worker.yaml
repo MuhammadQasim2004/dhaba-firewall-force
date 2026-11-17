@@ -23,6 +23,9 @@ spec:
         - name: kitchen-worker
           image: kitchen-worker:latest
           env:
+            # keep the JVM inside the container limit on a small VM
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -Xss256k"
             - name: DB_HOST
               valueFrom:
                 configMapKeyRef:
@@ -45,19 +48,19 @@ spec:
                   key: REDIS_HOST
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 50m
+              memory: 192Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 384Mi
           livenessProbe:
             exec:
-              command: ["./healthcheck.sh"]
+              command: ["/app/healthcheck.sh"]
             initialDelaySeconds: 40
             periodSeconds: 15
           readinessProbe:
             exec:
-              command: ["./healthcheck.sh"]
+              command: ["/app/healthcheck.sh"]
             initialDelaySeconds: 40
             periodSeconds: 10
 ---

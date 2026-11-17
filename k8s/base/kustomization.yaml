@@ -10,7 +10,6 @@ resources:
   - orders-api.yaml
   - stats-api.yaml
   - kitchen-worker.yaml
-  - strip-api.yaml
   - ingress.yaml
 
 configMapGenerator:

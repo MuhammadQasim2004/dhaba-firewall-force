@@ -6,25 +6,26 @@ namespace: staging
 resources:
   - ../../base
 
-# --- Image tags (pipeline updates these with: kustomize edit set image) ---
+# Image tags = commit SHAs in ECR. The pipeline updates them with
+# "kustomize edit set image". Never "latest" (ECR tags are immutable SHAs).
 images:
   - name: web
-    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/web
-    newTag: latest
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/web
+    newTag: 3c97d5cc1354e9e7f937acb3ab36bdc40d85ce80
   - name: menu-api
-    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/menu-api
-    newTag: latest
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/menu-api
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
   - name: orders-api
-    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/orders-api
-    newTag: latest
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/orders-api
+    newTag: f2850317222276571422069b263fa76dacfa75e8
   - name: stats-api
-    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/stats-api
-    newTag: latest
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/stats-api
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
   - name: kitchen-worker
-    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/kitchen-worker
-    newTag: latest
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/kitchen-worker
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
 
-# --- Replica count: 1 in staging ---
+# Staging: 1 replica of everything, base resource limits
 replicas:
   - name: web
     count: 1
@@ -37,60 +38,11 @@ replicas:
   - name: kitchen-worker
     count: 1
 
-# --- Patches: Ingress host + middleware annotation ---
 patches:
+  # hostname for both Ingresses (dhaba-web and dhaba-api)
   - target:
       kind: Ingress
-      name: dhaba-ingress
     patch: |-
       - op: replace
         path: /spec/rules/0/host
         value: staging.firewall-force.test
-      - op: replace
-        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
-        value: "staging-strip-api@kubernetescrd"
-
-  # Smaller resource limits for staging
-  - target:
-      kind: Deployment
-      name: web
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "150m"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "96Mi"
-
-  - target:
-      kind: Deployment
-      name: menu-api
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "150m"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "96Mi"
-
-  - target:
-      kind: Deployment
-      name: orders-api
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "150m"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "96Mi"
-
-  - target:
-      kind: Deployment
-      name: stats-api
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "150m"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "96Mi"

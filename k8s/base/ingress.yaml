@@ -1,41 +1,57 @@
+# Two Ingresses on minikube's NGINX ingress controller:
+#  - dhaba-web: "/" -> web, no rewrite
+#  - dhaba-api: "/api/<svc>..." -> the API, with "/api" stripped
+#    (the browser calls /api/menu, but menu-api only serves /menu)
+# The overlays replace HOSTNAME with the environment's host.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: dhaba-ingress
-  annotations:
-    # Each overlay patches this annotation with its own namespace prefix
-    traefik.ingress.kubernetes.io/router.middlewares: "NAMESPACE-strip-api@kubernetescrd"
+  name: dhaba-web
 spec:
-  ingressClassName: traefik
+  ingressClassName: nginx
   rules:
     - host: "HOSTNAME"
       http:
         paths:
-          - path: /api/menu
-            pathType: Prefix
-            backend:
-              service:
-                name: menu-api
-                port:
-                  number: 8000
-          - path: /api/orders
-            pathType: Prefix
-            backend:
-              service:
-                name: orders-api
-                port:
-                  number: 8080
-          - path: /api/stats
-            pathType: Prefix
-            backend:
-              service:
-                name: stats-api
-                port:
-                  number: 8080
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: web
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dhaba-api
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1   # /api/menu -> /menu, /api/orders/7 -> /orders/7
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "HOSTNAME"
+      http:
+        paths:
+          - path: /api/(menu.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: menu-api
+                port:
+                  number: 8000
+          - path: /api/(orders.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: orders-api
+                port:
+                  number: 8080
+          - path: /api/(stats.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: stats-api
                 port:
                   number: 8080

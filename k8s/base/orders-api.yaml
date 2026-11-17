@@ -41,11 +41,11 @@ spec:
                   fieldPath: metadata.name
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 20m
+              memory: 16Mi
             limits:
               cpu: 200m
-              memory: 128Mi
+              memory: 64Mi
           livenessProbe:
             httpGet:
               path: /health
