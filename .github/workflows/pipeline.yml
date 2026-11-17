@@ -107,15 +107,18 @@ jobs:
             -t "${{ steps.img.outputs.ref }}" \
             "$CONTEXT"
 
+      # Trivy via its official image, pinned to a known-safe version. We don't use
+      # aquasecurity/trivy-action: its tags were hijacked in March 2026 (CVE-2026-33634).
       - name: Scan (fail on CRITICAL)
         if: steps.exists.outputs.found != 'true'
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ steps.img.outputs.ref }}
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          format: table
+        run: |
+          mkdir -p "$HOME/.cache/trivy"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.69.3 image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            "${{ steps.img.outputs.ref }}"
 
       - name: Push
         if: steps.exists.outputs.found != 'true'
