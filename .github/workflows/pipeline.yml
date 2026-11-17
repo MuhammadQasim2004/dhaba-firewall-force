@@ -130,3 +130,30 @@ jobs:
       - name: Free disk on the VM
         if: always()
         run: docker image prune -f >/dev/null
+
+  # ---------------------------------------------------------- Stage 4a (C11)
+  deploy-staging:
+    name: Stage 4a deploy to staging
+    needs: [checks, build]
+    # run after a successful build, and also when nothing needed building (e.g. a k8s/ change)
+    if: always() && needs.checks.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: [self-hosted, linux, dhaba-vm]
+    environment: staging
+    concurrency: deploy-staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TEAM: ${{ vars.TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the deployer ServiceAccount (C10), not admin
+        env:
+          KCFG: ${{ secrets.DEPLOYER_KUBECONFIG }}
+        run: |
+          printf '%s' "$KCFG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Deploy, wait, smoke test, roll back on failure
+        run: bash scripts/deploy.sh staging "${{ github.sha }}"
+      - name: Remove kubeconfig
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kubeconfig"
