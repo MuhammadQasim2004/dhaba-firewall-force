@@ -1,7 +1,7 @@
 # ---- build stage ----
 FROM golang:1.22-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY . .
 RUN go mod tidy && go mod download
 ARG GIT_COMMIT=unknown
