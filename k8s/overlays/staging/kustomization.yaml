@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+resources:
+  - ../../base
+
+# Image tags = commit SHAs in ECR. The pipeline updates them with
+# "kustomize edit set image". Never "latest" (ECR tags are immutable SHAs).
+images:
+  - name: web
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/web
+    newTag: 3c97d5cc1354e9e7f937acb3ab36bdc40d85ce80
+  - name: menu-api
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/menu-api
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
+  - name: orders-api
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/orders-api
+    newTag: f2850317222276571422069b263fa76dacfa75e8
+  - name: stats-api
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/stats-api
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
+  - name: kitchen-worker
+    newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/kitchen-worker
+    newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
+
+# Staging: 1 replica of everything, base resource limits
+replicas:
+  - name: web
+    count: 1
+  - name: menu-api
+    count: 1
+  - name: orders-api
+    count: 1
+  - name: stats-api
+    count: 1
+  - name: kitchen-worker
+    count: 1
+
+patches:
+  # hostname for both Ingresses (dhaba-web and dhaba-api)
+  - target:
+      kind: Ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.firewall-force.test
