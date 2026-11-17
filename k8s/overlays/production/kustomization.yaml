@@ -1,0 +1,135 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production
+
+resources:
+  - ../../base
+
+# --- Image tags (pipeline updates these with: kustomize edit set image) ---
+images:
+  - name: web
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/web
+    newTag: latest
+  - name: menu-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/menu-api
+    newTag: latest
+  - name: orders-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/orders-api
+    newTag: latest
+  - name: stats-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/stats-api
+    newTag: latest
+  - name: kitchen-worker
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/kitchen-worker
+    newTag: latest
+
+# --- Replica count: 2 in production ---
+replicas:
+  - name: web
+    count: 2
+  - name: menu-api
+    count: 2
+  - name: orders-api
+    count: 2
+  - name: stats-api
+    count: 2
+  - name: kitchen-worker
+    count: 1
+
+# --- Patches: Ingress host, middleware, resource limits, topology spread ---
+patches:
+  - target:
+      kind: Ingress
+      name: dhaba-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: firewall-force.test
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: "production-strip-api@kubernetescrd"
+
+  # Bigger resource limits for production
+  - target:
+      kind: Deployment
+      name: web
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "50m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "300m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "128Mi"
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: web
+
+  - target:
+      kind: Deployment
+      name: menu-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "300m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "128Mi"
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: menu-api
+
+  - target:
+      kind: Deployment
+      name: orders-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "300m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "128Mi"
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: orders-api
+
+  - target:
+      kind: Deployment
+      name: stats-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "300m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "128Mi"
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: stats-api

@@ -1,0 +1,3 @@
+-- Copy the contents of db/init.sql here.
+-- Kustomize cannot reference files outside the k8s/ directory,
+-- so this is a local copy that the configMapGenerator picks up.

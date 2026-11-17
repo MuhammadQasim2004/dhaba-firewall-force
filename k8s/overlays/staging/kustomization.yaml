@@ -1,0 +1,96 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+resources:
+  - ../../base
+
+# --- Image tags (pipeline updates these with: kustomize edit set image) ---
+images:
+  - name: web
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/web
+    newTag: latest
+  - name: menu-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/menu-api
+    newTag: latest
+  - name: orders-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/orders-api
+    newTag: latest
+  - name: stats-api
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/stats-api
+    newTag: latest
+  - name: kitchen-worker
+    newName: ACCOUNT.dkr.ecr.REGION.amazonaws.com/dhaba-firewall-force/kitchen-worker
+    newTag: latest
+
+# --- Replica count: 1 in staging ---
+replicas:
+  - name: web
+    count: 1
+  - name: menu-api
+    count: 1
+  - name: orders-api
+    count: 1
+  - name: stats-api
+    count: 1
+  - name: kitchen-worker
+    count: 1
+
+# --- Patches: Ingress host + middleware annotation ---
+patches:
+  - target:
+      kind: Ingress
+      name: dhaba-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.firewall-force.test
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: "staging-strip-api@kubernetescrd"
+
+  # Smaller resource limits for staging
+  - target:
+      kind: Deployment
+      name: web
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "150m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "96Mi"
+
+  - target:
+      kind: Deployment
+      name: menu-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "150m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "96Mi"
+
+  - target:
+      kind: Deployment
+      name: orders-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "150m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "96Mi"
+
+  - target:
+      kind: Deployment
+      name: stats-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "150m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "96Mi"

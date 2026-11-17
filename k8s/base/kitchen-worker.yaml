@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kitchen-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitchen-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: kitchen-worker
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: kitchen-worker
+          image: kitchen-worker:latest
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: DB_PASSWORD
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: REDIS_HOST
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["./healthcheck.sh"]
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ["./healthcheck.sh"]
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kitchen-worker-pdb
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kitchen-worker
