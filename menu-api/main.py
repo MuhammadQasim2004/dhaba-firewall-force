@@ -1,12 +1,11 @@
 import json
 import os
-import time
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-import db
 import cache
+import db
 
 GIT_COMMIT = os.environ.get("GIT_COMMIT", "unknown")
 POD_NAME = os.environ.get("POD_NAME", "local")
