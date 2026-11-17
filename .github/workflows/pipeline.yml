@@ -1,0 +1,129 @@
+# C7: the main pipeline. Runs on every merge to main.
+#   Stage 1-2: reuses ci.yml (lint + unit tests) on GitHub's runners
+#   Stage 3  : builds ONLY the changed services on our self-hosted runner (the AWS VM),
+#              scans with Trivy, pushes to ECR tagged with the commit SHA.
+#
+# Why self-hosted: the org's SCP denies creating the GitHub OIDC provider, so
+# GitHub-hosted runners can't get AWS credentials without access keys. The VM gets
+# short-lived credentials from its IAM instance profile instead. No AWS keys anywhere.
+#
+# SAFETY: the repo is public. Self-hosted jobs run ONLY on push to main / manual runs,
+# never on pull_request. Never add the dhaba-vm label to ci.yml.
+#
+# Repo VARIABLES needed: AWS_REGION, TEAM (= firewall-force)
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}        # "Run workflow" button = build ALL services
+
+concurrency:
+  group: pipeline-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------- Stage 1-2
+  checks:
+    name: Stage 1-2
+    uses: ./.github/workflows/ci.yml
+
+  # ---------------------------------------------------------- What changed?
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            web:            ['web/**']
+            menu-api:       ['menu-api/**']
+            orders-api:     ['orders-api/**']
+            kitchen-worker: ['kitchen-worker/**']
+            stats-api:      ['stats-api/**']
+            ops-monitor:    ['ops-monitor/**', 'scripts/monitor/**']
+      - id: list
+        env:
+          CHANGED: ${{ steps.filter.outputs.changes }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            services='["web","menu-api","orders-api","kitchen-worker","stats-api"]'
+            [ -f ops-monitor/Dockerfile ] && services='["web","menu-api","orders-api","kitchen-worker","stats-api","ops-monitor"]'
+          else
+            services="${CHANGED:-[]}"
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Services to build: $services" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------- Stage 3
+  build:
+    name: Stage 3 build ${{ matrix.service }}
+    needs: [checks, changes]
+    if: needs.changes.outputs.services != '[]'
+    runs-on: [self-hosted, linux, dhaba-vm]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}          # credentials come from the VM's instance profile
+      REPO: dhaba-${{ vars.TEAM }}/${{ matrix.service }}
+      TAG: ${{ github.sha }}
+      CONTEXT: ${{ matrix.service == 'ops-monitor' && '.' || matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Image name
+        id: img
+        run: echo "ref=${{ steps.ecr.outputs.registry }}/$REPO:$TAG" >> "$GITHUB_OUTPUT"
+
+      # ECR repos are IMMUTABLE: re-running a run whose push already succeeded must not fail
+      - name: Already pushed?
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "$REPO:$TAG already in ECR - skipping build" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build
+        if: steps.exists.outputs.found != 'true'
+        run: |
+          docker build --pull \
+            --build-arg GIT_COMMIT="$TAG" \
+            -f "${{ matrix.service }}/Dockerfile" \
+            -t "${{ steps.img.outputs.ref }}" \
+            "$CONTEXT"
+
+      - name: Scan (fail on CRITICAL)
+        if: steps.exists.outputs.found != 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.img.outputs.ref }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Push
+        if: steps.exists.outputs.found != 'true'
+        run: |
+          docker push "${{ steps.img.outputs.ref }}"
+          size=$(docker image inspect "${{ steps.img.outputs.ref }}" --format '{{.Size}}' | awk '{printf "%.1f MB", $1/1024/1024}')
+          echo "Pushed **${{ steps.img.outputs.ref }}** ($size)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Free disk on the VM
+        if: always()
+        run: docker image prune -f >/dev/null

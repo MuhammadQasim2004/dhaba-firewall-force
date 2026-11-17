@@ -10,9 +10,6 @@ on:
 
   workflow_call: {}          # lets the C7 pipeline reuse these checks
 
-  push:                      # TEMPORARY: remove once the C7 pipeline calls this file
-
-    branches: [main]
 
 
 concurrency:
