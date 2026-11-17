@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Deploy Dhaba Orders to one environment, smoke-test it, and roll back if anything fails.
 #
-# Usage: scripts/deploy.sh <staging|production> <commit-sha> [copy-from-namespace]
-#   staging:    services whose image exists in ECR for <commit-sha> get that tag;
-#               every other service keeps the image that is running now.
-#   production: pass "staging" as copy-from-namespace to deploy exactly the images
-#               that passed staging (never a new build).
+# Usage: scripts/deploy.sh <staging|production> <commit-sha>
+#   Default: services whose image exists in ECR for <commit-sha> get that tag;
+#            every other service keeps the image that is running now.
+#   PIN_IMAGES="web=<image> menu-api=<image> ...": deploy exactly these images instead.
+#            Production uses this with the images that passed staging (never a new
+#            build), and scripts/rollback.sh uses it with the previous release.
 #
 # Needs: AWS_REGION, TEAM, KUBECONFIG (the deployer ServiceAccount), aws, kubectl, curl.
 # The runner is on the VM, where port 80 forwards to the ingress (BASE_URL).
 set -euo pipefail
 
-NS="${1:?usage: deploy.sh <staging|production> <sha> [copy-from-namespace]}"
-SHA="${2:?usage: deploy.sh <staging|production> <sha> [copy-from-namespace]}"
-COPY_FROM="${3:-}"
+NS="${1:?usage: deploy.sh <staging|production> <sha>}"
+SHA="${2:?usage: deploy.sh <staging|production> <sha>}"
+PIN_IMAGES="${PIN_IMAGES:-}"
 : "${AWS_REGION:?set AWS_REGION}" "${TEAM:?set TEAM}"
 BASE_URL="${BASE_URL:-http://localhost}"
 SERVICES=(web menu-api orders-api stats-api kitchen-worker)
@@ -33,11 +34,13 @@ current_image() {
 }
 
 # ---------------------------------------------------------------- which image per service
-declare -A BEFORE TARGET
+declare -A BEFORE TARGET PINNED
+read -r -a PAIRS <<< "$PIN_IMAGES"
+for pair in "${PAIRS[@]}"; do PINNED[${pair%%=*}]="${pair#*=}"; done
 for s in "${SERVICES[@]}"; do
   BEFORE[$s]=$(current_image "$NS" "$s")
-  if [ -n "$COPY_FROM" ]; then
-    TARGET[$s]=$(current_image "$COPY_FROM" "$s")
+  if [ -n "$PIN_IMAGES" ]; then
+    TARGET[$s]="${PINNED[$s]:-${BEFORE[$s]}}"
   elif aws ecr describe-images --repository-name "dhaba-${TEAM}/${s}" --image-ids imageTag="$SHA" >/dev/null 2>&1; then
     TARGET[$s]="${REG}/dhaba-${TEAM}/${s}:${SHA}"
   else
@@ -115,5 +118,23 @@ done
 
 STATS=$(api "$BASE_URL/api/stats") || STATS=""
 grep -q '"orders_per_minute"' <<<"$STATS" || rollback "smoke: stats did not respond"
+
+# ---------------------------------------------------------------- record the release
+# images=... is used by the production job (same images as staging);
+# release-history.previous is what the rollback button returns to.
+IMAGES=""
+for s in "${SERVICES[@]}"; do IMAGES+="$s=${TARGET[$s]} "; done
+echo "images=${IMAGES% }" >> "${GITHUB_OUTPUT:-/dev/null}"
+PREVIOUS=""
+CHANGED=""
+for s in "${SERVICES[@]}"; do
+  PREVIOUS+="$s=${BEFORE[$s]} "
+  if [ "${BEFORE[$s]}" != "${TARGET[$s]}" ]; then CHANGED=yes; fi
+done
+if [ -n "$CHANGED" ]; then
+  kubectl -n "$NS" create configmap release-history \
+    --from-literal=previous="${PREVIOUS% }" --from-literal=current="${IMAGES% }" \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 summary "### :white_check_mark: $NS deployed and smoke tests passed (order $ID went new -> ready)"
