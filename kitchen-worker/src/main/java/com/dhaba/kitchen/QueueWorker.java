@@ -73,7 +73,9 @@ public class QueueWorker {
         }
     }
 
-    private void processOrder(long orderId) {
+    // package-private (not private) so QueueWorkerTest, in the same
+    // package, can call it directly without going through the scheduler.
+    void processOrder(long orderId) {
         jdbcTemplate.update("UPDATE orders SET status = 'cooking' WHERE id = ?", orderId);
         try {
             Thread.sleep(500); // simulate cook time
