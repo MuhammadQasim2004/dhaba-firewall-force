@@ -1,0 +1,185 @@
+# C5: Stage 1 (static analysis) + Stage 2 (unit tests)
+# Runs on every PR. The C7 pipeline will reuse it via `uses: ./.github/workflows/ci.yml`.
+name: CI
+
+on:
+
+  pull_request:
+
+    branches: [main]
+
+  workflow_call: {}          # lets the C7 pipeline reuse these checks
+
+  push:                      # TEMPORARY: remove once the C7 pipeline calls this file
+
+    branches: [main]
+
+
+concurrency:
+
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+
+  cancel-in-progress: true
+
+
+permissions:
+
+  contents: read
+
+
+jobs:
+
+  web:
+
+    name: web (ESLint + Vitest)
+
+    runs-on: ubuntu-latest
+
+    defaults: { run: { working-directory: web } }
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Static analysis (ESLint)
+        run: npm run lint
+      - name: Unit tests (Vitest)
+        run: npm test
+
+  menu-api:
+    name: menu-api (Ruff + pytest)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: menu-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: menu-api/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Static analysis (Ruff)
+        run: ruff check .
+      - name: Unit tests (pytest)
+        run: pytest -q
+
+  orders-api:
+    name: orders-api (golangci-lint + go test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: orders-api/go.mod
+          cache-dependency-path: orders-api/go.sum
+      - name: Static analysis (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: orders-api
+          version: v1.64.8
+      - name: Unit tests (go test)
+        working-directory: orders-api
+        run: go test ./... -race -count=1
+
+  kitchen-worker:
+    name: kitchen-worker (Checkstyle + JUnit)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: kitchen-worker } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: kitchen-worker/pom.xml
+      - name: Static analysis (Checkstyle via Maven)
+        run: mvn -B -ntp checkstyle:check
+      - name: Unit tests (JUnit via Maven)
+        run: mvn -B -ntp test
+
+  stats-api:
+    name: stats-api (PHPStan + PHPUnit)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: stats-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer
+          coverage: none
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('stats-api/composer.lock', 'stats-api/composer.json') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Static analysis (PHPStan)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+      - name: Unit tests (PHPUnit)
+        run: vendor/bin/phpunit tests
+
+  hadolint:
+    name: Dockerfiles (hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          recursive: true
+          failure-threshold: warning
+          ignore: DL3018
+
+  shellcheck:
+    name: Shell scripts (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts/
+        run: |
+          if [ -d scripts ]; then
+            find scripts -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
+          else
+            echo "no scripts/ yet - skipping"
+          fi
+
+  kubeconform:
+    name: K8s manifests (kubeconform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+      - name: Validate rendered overlays
+        run: |
+          if [ ! -d k8s ]; then echo "no k8s/ yet - skipping"; exit 0; fi
+          for overlay in k8s/overlays/*/; do
+            echo "== $overlay"
+            kubectl kustomize "$overlay" | kubeconform -strict -summary -ignore-missing-schemas
+          done
+
+  ci-passed:
+    name: ci-passed
+    if: always()
+    needs: [web, menu-api, orders-api, kitchen-worker, stats-api, hadolint, shellcheck, kubeconform]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "A check failed"; exit 1
+          fi
