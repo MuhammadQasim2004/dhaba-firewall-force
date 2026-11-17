@@ -32,20 +32,20 @@ type orderRequest struct {
 	Dish string `json:"dish"`
 }
 
-func main() {
-	healthcheck := flag.Bool("healthcheck", false, "probe /health and exit 0/1 (used by Docker HEALTHCHECK)")
-	flag.Parse()
-	if *healthcheck {
-		resp, err := http.Get("http://127.0.0.1:8080/health")
-		if err != nil || resp.StatusCode != http.StatusOK {
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
+// OrderStore is the persistence interface the HTTP handlers depend on.
+// Production code uses *Store (Postgres + Redis); tests use a fake that
+// implements this interface in memory, so handler tests never need a
+// real database or Redis connection.
+type OrderStore interface {
+	CreateOrder(ctx context.Context, dish string) (Order, error)
+	ListOrders(ctx context.Context) ([]Order, error)
+}
 
-	store := NewStore()
-
+// newMux builds the routing table against any OrderStore implementation.
+// Splitting this out from main() is what makes the handlers unit-testable.
+func newMux(store OrderStore) *http.ServeMux {
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -91,6 +91,23 @@ func main() {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+
+	return mux
+}
+
+func main() {
+	healthcheck := flag.Bool("healthcheck", false, "probe /health and exit 0/1 (used by Docker HEALTHCHECK)")
+	flag.Parse()
+	if *healthcheck {
+		resp, err := http.Get("http://127.0.0.1:8080/health")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	store := NewStore()
+	mux := newMux(store)
 
 	log.Printf("orders-api %s starting on :8080 (pod=%s)", gitCommit, podName)
 	log.Fatal(http.ListenAndServe(":8080", mux))
