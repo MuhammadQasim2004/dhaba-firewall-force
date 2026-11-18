@@ -69,7 +69,6 @@ patches:
               matchExpressions:
                 - key: app
                   operator: Exists
-            matchLabelKeys: [app]   # each Deployment is spread on its own app label
 
   - target:
       kind: Deployment
