@@ -20,8 +20,8 @@ BASE_URL="${BASE_URL:-http://localhost}"
 SERVICES=(web menu-api orders-api stats-api kitchen-worker)
 
 case "$NS" in
-  staging)    HOST="staging.${TEAM}.test" ;;
-  production) HOST="${TEAM}.test" ;;
+  staging)    HOST="staging.16.179.57.193.nip.io" ;;
+  production) HOST="prod.16.179.57.193.nip.io" ;;
   *) echo "unknown environment: $NS" >&2; exit 2 ;;
 esac
 
