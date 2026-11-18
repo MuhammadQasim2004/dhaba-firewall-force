@@ -11,7 +11,7 @@ CI/CD pipeline, persistent storage, and shell-based monitoring.
 | Teammate 3 | TODO | TODO | kitchen-worker, stats-api, k8s manifests, CD pipeline, check-databases.sh, ops-monitor |
 
 - Jira board: TODO (link)
-- Both websites: http://firewall-force.test (production), http://staging.firewall-force.test (staging)
+- Both websites: http://prod.16.179.57.193.nip.io (production), http://staging.16.179.57.193.nip.io (staging)
 - Actions tab: TODO (link)
 
 ## Services
