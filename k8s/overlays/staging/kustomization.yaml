@@ -45,4 +45,4 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: staging.firewall-force.test
+        value: staging.16.179.57.193.nip.io
